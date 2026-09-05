@@ -1,66 +1,108 @@
-console.log("%c🚀 Discord Quest Auto-Complete | By SIDO16DZ", "color: #5865F2; font-size: 16px; font-weight: bold;");
-console.log("%chttps://github.com/SIDO16DZ/discord-quest-auto-complete", "color: #008000; font-size: 11px;");
+delete window.$;
+let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+webpackChunkdiscord_app.pop();
 
-delete window.aetheryx;
-window.aetheryx = true;
+let modules = Object.values(wpRequire.c);
 
-const req = typeof webpackChunkdiscord_app !== "undefined" 
-    ? webpackChunkdiscord_app.push([[Symbol()], {}, e => e]) 
-    : null;
+let ApplicationStreamingStore = modules.find(x => x?.exports?.A?.__proto__?.getStreamerActiveStreamMetadata)?.exports?.A;
+let RunningGameStore = modules.find(x => x?.exports?.Ay?.getRunningGames)?.exports?.Ay;
+let QuestsStore = modules.find(x => x?.exports?.A?.__proto__?.getQuest)?.exports?.A;
+let ChannelStore = modules.find(x => x?.exports?.A?.__proto__?.getAllThreadsForParent)?.exports?.A;
+let GuildChannelStore = modules.find(x => x?.exports?.Ay?.getSFWDefaultChannel)?.exports?.Ay;
 
-if (!req) {
-    console.error("❌ [SIDO16DZ Script] Could not find Discord Webpack chunk.");
+let FluxDispatcher = modules.find(x => x?.exports?.default?.dispatch && x?.exports?.default?.subscribe)?.exports?.default 
+    || modules.find(x => x?.exports?.Z?.dispatch)?.exports?.Z
+    || modules.find(x => x?.exports?.h?.__proto__?._flushWaitQueue)?.exports?.h;
+
+let api = modules.find(x => x?.exports?.Bo?.get)?.exports?.Bo 
+    || modules.find(x => x?.exports?.tn?.get)?.exports?.tn
+    || modules.find(x => x?.exports?.HTTP?.get)?.exports?.HTTP;
+
+const supportedTasks = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
+let quests = [...(QuestsStore?.quests?.values() ?? [])].filter(x => {
+    const expiresAt = new Date(x.config?.expiresAt).getTime();
+    return x.userStatus?.enrolledAt && !x.userStatus?.completedAt && expiresAt > Date.now() && supportedTasks.find(y => Object.keys((x.config.taskConfig ?? x.config.taskConfigV2)?.tasks ?? {}).includes(y));
+});
+
+let isApp = typeof DiscordNative !== "undefined";
+
+if (quests.length === 0) {
+    console.log("You don't have any uncompleted quests!");
 } else {
-    const modules = Object.values(req.c).filter(m => m && m.exports);
+    console.log(`Starting ${quests.length} quests in parallel...`);
 
-    const QuestStore = modules.find(m => m.exports?.Z?.getQuest || m.exports?.default?.getQuest)?.exports?.Z || modules.find(m => m.exports?.default?.getQuest)?.exports?.default;
-    const ChannelStore = modules.find(m => m.exports?.Z?.getPrivateChannels || m.exports?.default?.getPrivateChannels)?.exports?.Z || modules.find(m => m.exports?.default?.getPrivateChannels)?.exports?.default;
-    const FluxDispatcher = modules.find(m => m.exports?.Z?.dispatch || m.exports?.default?.dispatch)?.exports?.Z || modules.find(m => m.exports?.default?.dispatch)?.exports?.default;
-    const HTTP = modules.find(m => m.exports?.get && m.exports?.post)?.exports || modules.find(m => m.exports?.default?.get && m.exports?.default?.post)?.exports?.default;
+    // تشغيل جميع المهام مع بعضها في نفس الوقت
+    quests.forEach(quest => {
+        const pid = Math.floor(Math.random() * 30000) + 1000;
+        const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+        const taskName = supportedTasks.find(x => taskConfig.tasks?.[x] != null);
+        const secondsNeeded = taskConfig?.tasks?.[taskName]?.target;
+        let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 
-    if (!QuestStore) {
-        console.error("❌ [SIDO16DZ Script] Could not load QuestStore. Make sure you are logged in and Discord is fully loaded.");
-    } else {
-        const quests = QuestStore.getQuests();
-        const activeQuests = Object.values(quests).filter(q => q.userStatus?.enrolledAt && !q.userStatus?.completedAt);
+        if (!taskName || !secondsNeeded) return;
 
-        if (activeQuests.length === 0) {
-            console.log("⚠️ [SIDO16DZ Script] No active quests found to complete.");
-        } else {
-            activeQuests.forEach(async (quest) => {
-                console.log(`🚀 [SIDO16DZ Script] Processing Quest: ${quest.config.messages.questName}`);
+        const taskData = taskConfig?.tasks?.[taskName];
+        const application = quest.config.application ?? quest.config.applications?.[0] ?? taskConfig?.application ?? taskData?.applications?.[0] ?? Object.values(taskConfig?.tasks ?? {}).find(t => t?.applicationId);
+        const applicationId = application?.id ?? application?.applicationId ?? quest.id;
+        const applicationName = application?.name ?? application?.applicationName ?? "Unknown";
+        const questName = quest.config.messages?.questName ?? "Unknown Quest";
+
+        if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
+            const speed = 7;
+            let fn = async () => {
+                while (true) {
+                    const remaining = Math.min(speed, secondsNeeded - secondsDone);
+                    await new Promise(resolve => setTimeout(resolve, remaining * 1000));
+                    const timestamp = secondsDone + speed;
+                    try {
+                        const res = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}});
+                        secondsDone = Math.min(secondsNeeded, timestamp);
+                        if (res.body?.completed_at != null || timestamp >= secondsNeeded) break;
+                    } catch (e) { break; }
+                }
+                console.log(`[DONE] ${questName}`);
+            };
+            fn();
+        } else if (taskName === "PLAY_ON_DESKTOP" && isApp) {
+            api.get({url: `/applications/public?application_ids=${applicationId}`}).then(res => {
+                const appData = res.body?.[0];
+                if (!appData) return;
+                const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">", "") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "");
+
+                const fakeGame = {
+                    cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
+                    exeName,
+                    exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                    hidden: false,
+                    isLauncher: false,
+                    id: applicationId,
+                    name: appData.name,
+                    pid: pid,
+                    pidPath: [pid],
+                    processName: appData.name,
+                    start: Date.now(),
+                };
+
+                const currentGames = RunningGameStore.getRunningGames();
+                RunningGameStore.getRunningGames = () => [...currentGames, fakeGame];
                 
-                const taskConfig = quest.config.taskConfig;
-                
-                if (taskConfig.tasks.STREAM_ON_DESKTOP && FluxDispatcher && ChannelStore) {
-                    const pid = Math.floor(Math.random() * 100000);
-                    const channel = Object.values(ChannelStore.getPrivateChannels())[0]?.id;
-
-                    FluxDispatcher.dispatch({
-                        type: "STREAM_START",
-                        streamType: "guild",
-                        guildId: null,
-                        channelId: channel,
-                        pid: pid,
-                    });
-
-                    console.log(`📡 [SIDO16DZ Script] Simulating stream for quest: ${quest.config.messages.questName}`);
+                if (FluxDispatcher) {
+                    FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: RunningGameStore.getRunningGames()});
                 }
 
-                if (taskConfig.tasks.PLAY_ON_DESKTOP && HTTP) {
-                    const secondsNeeded = taskConfig.tasks.PLAY_ON_DESKTOP.target;
-                    
-                    for (let i = 0; i <= secondsNeeded; i += 30) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        HTTP.post({
-                            url: `/quests/${quest.id}/heartbeat`,
-                            body: { stream_key: null, terminal: false }
-                        });
+                let fn = data => {
+                    let progress = quest.config.configVersion === 1 ? data?.userStatus?.streamProgressSeconds : Math.floor(data?.userStatus?.progress?.PLAY_ON_DESKTOP?.value ?? 0);
+                    console.log(`[PROGRESS] ${questName}: ${progress}/${secondsNeeded}`);
+
+                    if (progress >= secondsNeeded) {
+                        console.log(`[DONE] ${questName}`);
+                        if (FluxDispatcher) FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
                     }
-                }
+                };
 
-                console.log(`✅ [SIDO16DZ Script] Quest completed or heartbeat sent for: ${quest.config.messages.questName}`);
+                if (FluxDispatcher) FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
+                console.log(`[STARTED] Spoofed ${appData.name}`);
             });
         }
-    }
+    });
 }
