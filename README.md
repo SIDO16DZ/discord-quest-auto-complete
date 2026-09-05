@@ -3,16 +3,16 @@
 A lightweight JavaScript snippet to automatically complete Discord Quests in parallel directly from the Discord Console.
 
 ## Features
-- Completes all available Quests simultaneously.
-- Supports Video Quests and Desktop Play Quests.
-- Bypasses recent Discord Webpack updates.
+- Auto-enrolls and completes all available Quests simultaneously.
+- Supports Video Quests, Desktop Play Quests, and Stream Quests.
+- Bypasses recent Discord Webpack module updates.
 
 ## How to Use
 1. Open the Discord Desktop App.
 2. Press `Ctrl + Shift + I` to open Developer Tools.
 3. Switch to the **Console** tab.
-4. Copy the code from [`script.js`](./script.js) and paste it into the console.
-5. Press `Enter`.
+4. If prompted with a warning, type `allow pasting` and press `Enter`.
+5. Copy the code from [`script.js`](./script.js), paste it into the console, and press `Enter`.
 
 ## Community & Support
 Join our Discord community for updates and assistance:
